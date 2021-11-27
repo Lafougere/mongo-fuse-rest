@@ -1,0 +1,27 @@
+{
+  "name": "mongo-fuse",
+  "version": "1.0.0",
+  "description": "fuse mount of mongodb storage",
+  "main": "app.js",
+  "author": "Axel Glorieux",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "bent": "^7.3.12",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^10.0.0",
+    "fuse-native": "^2.2.6",
+    "fuse-shared-library-darwin": "^1.1.3",
+    "mime-types": "^2.1.34",
+    "mongoose": "^6.0.13",
+    "mongoose-gridfs": "^1.3.0",
+    "nan": "^2.15.0",
+    "node-fuse-bindings": "^2.12.4"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      "./mnt"
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+<html>
+<head>
+    <title>MONGOFUSE</title>
+</head>
+<body>
+    <form>
+        <input type="file" id="upl">
+        <button type="submit">Send</button>
+    </form>
+    <script>
+        document.querySelector('form').addEventListener('submit', (e) => {
+            e.preventDefault()
+            console.log('sbm', e.target)
+            const file = document.getElementById('upl').files[0]
+            const folder = '/testfolder/pif/paf'
+            const path = `/files${folder}/${file.name}?type=${file.type}&lastModified=${file.lastModified}`
+            console.log(file)
+            fetch(path.replace('//', '/'), { method: 'post', body: file, headers: {'Content-Type': file.type } }).then(resp => {
+                console.log(resp)
+            })
+            .catch(err => {
+                console.error(err)
+            })
+        })
+    </script>
+</body>
+</html>

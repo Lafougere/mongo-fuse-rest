@@ -1,0 +1,34 @@
+version: '3.9' # Docker Engine release 19.03.0+ [https://docs.docker.com/compose/compose-file/]
+
+services:
+    # setup MongoDB cluster for production
+    mongo:
+        image: mongo
+        ports:
+            - 27018:27018
+        volumes:
+            - mongo-fuse-data:/data/db
+        env_file:
+            - .env
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+            MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+            MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+        command: mongod --port 27018 --auth --bind_ip_all
+
+    mongo-express:
+        image: mongo-express
+        restart: always
+        ports:
+            - 8081:8081
+        depends_on:
+            - mongo
+        env_file:
+            - .env
+        environment:
+            ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+            ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+            ME_CONFIG_MONGODB_PORT: 27018
+            ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27018/
+volumes:
+    mongo-fuse-data:
