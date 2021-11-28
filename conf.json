@@ -1,0 +1,6 @@
+{
+    "backendUrl": "http://localhost:9004",
+    "mountPath": "./mnt",
+    "username": "axel",
+    "password": "pass"
+}

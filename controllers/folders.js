@@ -27,7 +27,7 @@ async function ensurePath(path, user) {
     return folder
 }
 
-router.get('/*', async (req, res) => {
+router.get('/list/*', async (req, res) => {
     const p = '/' + req.params['0']
     // console.log(p)
     // console.log(req.user)
@@ -42,6 +42,20 @@ router.get('/*', async (req, res) => {
         if (!folder) return res.status(404).send('not found')
         const folders = await Folder.find({parent: folder._id}).lean()
         res.send(folders)
+    }
+    // res.send('folders')
+})
+router.get('/info/*', async (req, res) => {
+    const p = '/' + req.params['0']
+    // console.log(p)
+    // console.log(req.user)
+    if (p === '/') {
+        res.send({ _id: null, path: '/', name: '/', updatedAt: req.user.createdAt })
+    }
+    else {
+        const folder = await Folder.findOne({ path: p, owner: req.user._id })
+        if (!folder) return res.status(404).send('not found')
+        res.send(folder)
     }
     // res.send('folders')
 })
@@ -66,20 +80,29 @@ router.patch('/*', async (req, res) => {
     console.log('rename folder')
     const p = '/' + req.params['0']
     // console.log(req.user)
-    // console.log(p)
+    console.log(p)
     const parentPath = p.split('/').slice(0, -1).join('/')
     const name = p.split('/').pop()
     console.log(parentPath)
     const folder = await Folder.findOne({ path: p, owner: req.user._id })
-    if (!folder) return res.status(404).send('not found')
+    if (!folder) return res.status(404).send('folder not found')
     if (req.query.rename) {
+        console.log('renaming to', req.query.rename)
         const destPath = req.query.rename
         const destParent = destPath.split('/').slice(0, -1).join('/')
         const destName = destPath.split('/').pop()
-        const newParent = await Folder.findOne({path: destParent, owner: req.user._id})
-        if (!newParent) return res.status(404).send('destination folder not found')
+        console.log('destParnet', destParent)
+        if (destParent !== '') {
+            const newParent = await Folder.findOne({path: destParent, owner: req.user._id})
+            console.log('newparent', newParent)
+            if (!newParent) return res.status(404).send('destination folder not found')
+            folder.parent = newParent
+        }
+        else {
+            folder.parent = null
+        }
+        
         folder.path = destPath
-        folder.parent = newParent
         folder.name = destName
         await folder.save()
         res.send(folder)

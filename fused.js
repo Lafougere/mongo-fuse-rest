@@ -25,19 +25,21 @@ function toFlag(flags) {
   return 'r+'
 }
 
+
 authenticate('axel', 'pass').then(token => {
 	const headers = {'Authorization': `Bearer ${token}`}
 	const getJson = bent(backendUrl, 'json', 200, headers)
 	const getBuffer = bent(backendUrl, 'buffer', [200, 204], headers)
 	const postJson = bent(backendUrl, 'POST', 'json', [200, 204], headers)
 	const put = bent(backendUrl, 'PUT', [200, 204], headers)
+	const patch = bent(backendUrl, 'PATCH','json', [200, 204], headers)
 	const del = bent(backendUrl, 'DELETE', [200, 204], headers)
 
 	const ops = {
 		readdir: async (path, cb) => {
 			console.log('readdir', path)
 			const [folders, files] = await Promise.all([
-				getJson('/folders' + path),
+				getJson('/folders/list' + path),
 				getJson('/files/list' + path)
 			])
 			folders.forEach(folder => {
@@ -51,8 +53,8 @@ authenticate('axel', 'pass').then(token => {
 			})
 			cb(0, [...folders, ...files].map(i => i.name))
 		},
-		getattr: (path, cb) => {
-			console.log('getattr', path)
+		getattr: function (path, cb) {
+			// console.log('getattr', path)
 			if (path === '/') {
 				return cb(0, {
 					mtime: new Date(),
@@ -66,6 +68,7 @@ authenticate('axel', 'pass').then(token => {
 				})
 			}
 			const item = cache[path]
+			// console.log(item)
 			if (item) {
 				if (item.isFile) {
 					return cb(0, {
@@ -90,11 +93,35 @@ authenticate('axel', 'pass').then(token => {
 					gid: process.getgid ? process.getgid() : 0
 				})
 			}
-			console.log('notf')
-			cb(fuse.ENOENT)
+			const url = '/files/info/' + path
+			getJson(url.replace('//', '/')).then((file) => {
+				console.log('caching')
+				file.isFile = true
+				cache[path] = file
+				cache[path].getcontent = getBuffer('/files/download/' + file._id).then(buf => {
+					console.log('got buf', buf)
+					// console.log('buf',buf.toString())
+					return buf
+				})
+				console.log('call cb')
+				return cb(0, {
+						mtime: new Date(file.updatedAt),
+						atime: new Date(file.updatedAt),
+						ctime: new Date(file.updatedAt),
+						nlink: 1,
+						size: file.size,
+						mode: 33188,
+						uid: process.getuid ? process.getuid() : 0,
+						gid: process.getgid ? process.getgid() : 0
+					})
+			})
+			.catch(err => {
+				// console.error(err)
+				cb(fuse.ENOENT)
+			})
 		},
 		fgetattr: (path, fd, cb) => {
-			console.log('fgetattr', path)
+			// console.log('fgetattr', path)
 			if (path === '/') {
 				return cb(0, {
 					mtime: new Date(),
@@ -132,8 +159,33 @@ authenticate('axel', 'pass').then(token => {
 					gid: process.getgid ? process.getgid() : 0
 				})
 			}
-			console.log('notf')
-			cb(fuse.ENOENT)
+			const url = '/files/info/' + path
+			getJson(url.replace('//', '/')).then((file) => {
+				// console.log('caching')
+				file.isFile = true
+				cache[path] = file
+				cache[path].getcontent = getBuffer('/files/download/' + file._id).then(buf => {
+					// console.log('got buf', buf)
+					// console.log('buf',buf.toString())
+					return buf
+				})
+				// console.log('call cb')
+				return cb(0, {
+						mtime: new Date(file.updatedAt),
+						atime: new Date(file.updatedAt),
+						ctime: new Date(file.updatedAt),
+						nlink: 1,
+						size: file.size,
+						mode: 33188,
+						uid: process.getuid ? process.getuid() : 0,
+						gid: process.getgid ? process.getgid() : 0
+					})
+			})
+			.catch(err => {
+				console.error(err)
+				cb(fuse.EIO)
+			})
+			// cb(fuse.ENOENT)
 		},
 		open: async function (path, flags, cb) {
 			const flag = toFlag(flags)
@@ -144,14 +196,15 @@ authenticate('axel', 'pass').then(token => {
 				return cb(0, fd)
 			}
 			// cache[path] = cache[path] || {}
-			getJson('/files/info/' + path).then((file) => {
+			const url = '/files/info/' + path
+			getJson(url.replace('//', '/')).then((file) => {
 				const fd = descriptors.add(path)
 				console.log('openeed', fd)
 				file.isFile = true
 				cache[path] = file
 				cache[path].getcontent = getBuffer('/files/download/' + file._id).then(buf => {
 					console.log('got buf', buf)
-					console.log('buf',buf.toString())
+					// console.log('buf',buf.toString())
 					return buf
 				})
 				console.log('call cb with fd')
@@ -171,6 +224,7 @@ authenticate('axel', 'pass').then(token => {
 			if (item) {
 				if (!item.size) return cb(0)
 				const content = await cache[path].getcontent
+				console.log('content', content)
 
 				const part = content.slice(pos, pos + len)
 				part.copy(buf)
@@ -201,7 +255,7 @@ authenticate('axel', 'pass').then(token => {
 			cb(0)
 		},
 		getxattr: (path, name, buffer, length, offset, cb) => {
-			console.log('getxattr')
+			// console.log('getxattr')
 			cb(0)
 		},
 		listxattr: (path, buffer, length, cb) => {
@@ -211,10 +265,28 @@ authenticate('axel', 'pass').then(token => {
 		
 		truncate: (path, size, cb) => {
 			console.log('truncate', path)
+			const item = cache[path]
+			if (item) {
+				console.log('truncate item')
+				delete item.buf
+				item.getcontent = Promise.resolve(Buffer.from(''))
+				item.size = 0
+				put('/files/' + item._id).then(() => cb(0))
+				return
+			}
 			cb(0)
 		},
 		ftruncate: (path, fd, size, cb) => {
 			console.log('ftruncate', path)
+			const item = cache[path]
+			if (item) {
+				console.log('truncate item')
+				delete item.buf
+				item.getcontent = Promise.resolve(Buffer.from(''))
+				item.size = 0
+				put('/files/' + item._id).then(() => cb(0))
+				return
+			}
 			cb(0)
 		},
 		opendir: (path, flags, cb) => {
@@ -227,6 +299,10 @@ authenticate('axel', 'pass').then(token => {
 		},
 		release: (path, fd, cb) => {
 			console.log('release', path)
+			const item = cache[path]
+			if (item) {
+				delete item.buf
+			}
 			cb(0)
 		},
 		flush: (path, fd, cb) => {
@@ -262,13 +338,22 @@ authenticate('axel', 'pass').then(token => {
 			cb(0)
 		},
 		write: (path, fd, buffer, length, position, cb) => {
-			console.log('write')
+			console.log('write', length, position)
 			const item = cache[path]
 			if (item) {
-				put('/files/' + item._id, buffer.slice(0, length))
+				// console.log(buffer.toString())
+				item.buf = item.buf || Buffer.from('')
+				// console.log(item.buf)
+				item.buf = Buffer.concat([item.buf, buffer])
+				// const part = buffer.slice(0, length)
+				// part.copy(item.buf)
+				console.log('buff', item.buf)
+				// console.log(buffer.toString())
+				// console.log('buffer', part)
+				put('/files/' + item._id, item.buf)
 					.then(() => {
-						item.size = buffer.lenth
-						item.getcontent = Promise.resolve(buffer)
+						item.size = item.buf.length
+						item.getcontent = Promise.resolve(item.buf)
 						console.log('written')
 						cb(length)
 					})
@@ -295,6 +380,17 @@ authenticate('axel', 'pass').then(token => {
 			}
 			cb(fuse.ENOENT)
 		},
+		mkdir: (path, mode, cb) => {
+			postJson('/folders' + path)
+				.then((folder) => {
+					cache[path] = folder
+					cb(0)
+				})
+				.catch(err => {
+					console.error(err)
+					cb(fuse.EIO)
+				})
+		},
 		unlink: (path, cb) => {
 			const item = cache[path]
 			if (item) {
@@ -310,6 +406,36 @@ authenticate('axel', 'pass').then(token => {
 			}
 			cb(fuse.ENOENT)
 			
+		},
+		rename: (src, dest, cb) => {
+			console.log('rename')
+			const item = cache[src]
+			if (item) {
+				if (item.isFile) {
+					console.log('rename file', item)
+					patch('/files/' + item._id + '?rename=' + dest)
+						.then(() => {
+							cb(0)
+						})
+						.catch(err => {
+							console.error(err)
+							cb(fuse.EIO)
+						})
+				}
+				else {
+					patch('/folders' + src + '?rename=' + dest)
+						.then(() => {
+							cb(0)
+						})
+						.catch(err => {
+							console.error(err)
+							cb(fuse.EIO)
+						})
+				}
+
+				return
+			}
+			cb(fuse.ENOENT)
 		}
 	}
 	ops.force = true

@@ -56,7 +56,7 @@ router.get('/list/*', async (req, res) => {
     let files
     console.log('lisfiles', p)
     if (p === '/') {
-        files = await File.find({ folder: null, owner: req.user._id }).select('name size type _id lastModified createdAt')
+        files = await File.find({ folder: null, owner: req.user._id }).select('name size type _id lastModified createdAt updatedAt')
     }
     else {
         const folder = await Folder.findOne({path: p, owner: req.user._id})
@@ -86,7 +86,7 @@ router.get('/info/*', async (req, res) => {
     // get file info by path
     const p = '/' + req.params['0']
 
-    const filePath = p.split('/').slice(0, -1).join('/')
+    const filePath = p.split('/').slice(0, -1).join('/') || '/'
     const fileName = p.split('/').pop()
     console.log('fileinfo', filePath, fileName)
     const where = { folder: null, owner: req.user._id, name: fileName }
@@ -156,6 +156,7 @@ router.put('/:id', async (req, res) => {
 
     const file = await File.findOne({ _id: req.params.id, owner: req.user._id })
     if (!file) return res.status(404).send('file not found')
+    
     if (file.blob) {
         console.log('del blb')
         deleteBlob(file.blob).catch(err => {
@@ -165,10 +166,17 @@ router.put('/:id', async (req, res) => {
     }
 
     try {
-        const blob = await writeBlob(file.name, file.type, req)
-        console.log('blob writren')
-        file.blob = blob._id
-        file.size = blob.length
+        if (req.headers['content-length'] && parseInt(req.headers['content-length'])) {
+            const blob = await writeBlob(file.name, file.type, req)
+            console.log('blob writren')
+            file.blob = blob._id
+            file.size = blob.length
+        }
+        else {
+            file.blob = null
+            file.size = 0
+        }
+        
         await file.save()
         res.status(204).end()
     }
@@ -179,16 +187,24 @@ router.put('/:id', async (req, res) => {
 })
 
 router.patch('/:id', async (req, res) => {
-    console.log('rename file')
+    console.log('rename file', req.params.id)
     const file = await File.findOne({ _id: req.params.id, owner: req.user._id })
     if (!file) return res.status(404).send('file not found')
     if (req.query.rename) {
+        console.log('rename to', req.query.rename)
         const destPath = req.query.rename
-        const destParent = destPath.split('/').slice(0, -1).join('/')
+        const destParent = destPath.split('/').slice(0, -1).join('/') || '/'
+        console.log('destParent', destParent)
         const destName = destPath.split('/').pop()
-        const newParent = await Folder.findOne({path: destParent, owner: req.user._id})
-        if (!newParent) return res.status(404).send('destination folder not found')
-        file.folder = newParent
+        if (destParent !== '/') {
+            const newParent = await Folder.findOne({path: destParent, owner: req.user._id})
+            if (!newParent) return res.status(404).send('destination folder not found')
+            file.folder = newParent
+        }
+        else {
+            file.folder = null
+        }
+        
         file.name = destName
         await file.save()
         res.send(file)
